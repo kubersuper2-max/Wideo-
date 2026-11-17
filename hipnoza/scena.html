@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Mózg w hipnozie</title>
+<style>
+  html,body{margin:0;padding:0;background:#050816;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+"use strict";
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = "'Inter','DejaVu Sans',sans-serif";
+const DURATION = 148;
+
+// ---------- utils ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => { k = clamp(k); return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const ramp = (t, a, b) => ease((t - a) / (b - a));
+function win(t, s, e, fi = 0.9, fo = 0.9) { // alpha of a scene window
+  return clamp(Math.min((t - s) / fi, (e - t) / fo));
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function rgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+
+// ---------- palette ----------
+const C = {
+  bg0: '#050816', bg1: '#0b1235',
+  text: '#eef2ff', muted: '#9aa6d6', faint: '#5c6796',
+  cyan: '#4fd9ff', orange: '#ff8a3d', green: '#5cf0a0', violet: '#b48cff',
+  pink: '#ff5fa8', yellow: '#ffd75e', red: '#ff4d5e'
+};
+
+// ---------- brain geometry (local coords, ~1000x700) ----------
+function outlinePath(p) {
+  p.moveTo(-430, 80);
+  p.bezierCurveTo(-500, 20, -500, -150, -420, -240);
+  p.bezierCurveTo(-330, -340, -170, -370, -20, -365);
+  p.bezierCurveTo(150, -360, 330, -310, 420, -200);
+  p.bezierCurveTo(490, -110, 500, 20, 450, 110);
+  p.bezierCurveTo(420, 160, 360, 150, 300, 140);
+  p.bezierCurveTo(230, 150, 170, 190, 90, 195);
+  p.bezierCurveTo(-20, 205, -150, 210, -230, 170);
+  p.bezierCurveTo(-290, 140, -300, 90, -280, 70);
+  p.bezierCurveTo(-330, 95, -390, 105, -430, 80);
+  p.closePath();
+}
+const outline = new Path2D(); outlinePath(outline);
+
+// sulci: precomputed random walks inside the outline
+const testCtx = document.createElement('canvas').getContext('2d');
+const sulci = [];
+(function () {
+  const r = mulberry32(7);
+  let tries = 0;
+  while (sulci.length < 70 && tries < 5000) {
+    tries++;
+    let x = -470 + r() * 940, y = -360 + r() * 560;
+    if (!testCtx.isPointInPath(outline, x, y)) continue;
+    let ang = r() * Math.PI * 2;
+    const pts = [[x, y]];
+    const n = 5 + Math.floor(r() * 7);
+    for (let i = 0; i < n; i++) {
+      ang += (r() - 0.5) * 1.6;
+      x += Math.cos(ang) * (22 + r() * 18);
+      y += Math.sin(ang) * (22 + r() * 18);
+      pts.push([x, y]);
+    }
+    sulci.push(pts);
+  }
+})();
+const sparks = [];
+(function () {
+  const r = mulberry32(42);
+  while (sparks.length < 320) {
+    const x = -470 + r() * 940, y = -360 + r() * 560;
+    if (!testCtx.isPointInPath(outline, x, y)) continue;
+    sparks.push({ x, y, f: 1.5 + r() * 4, ph: r() * 100, s: 1 + r() * 2.2 });
+  }
+})();
+
+// regions (schematic positions, local coords)
+const R = {
+  dlpfc: { x: -300, y: -195, rx: 95, ry: 70, col: C.cyan, name: 'DLPFC', full: 'grzbietowo-boczna kora przedczołowa', medial: false },
+  dacc: { x: -150, y: -95, rx: 90, ry: 45, col: C.orange, name: 'dACC', full: 'grzbietowa przednia kora obręczy', medial: true },
+  mpfc: { x: -395, y: -30, rx: 60, ry: 60, col: C.violet, name: 'mPFC', full: 'przyśrodkowa kora przedczołowa', medial: true },
+  pcc: { x: 150, y: -150, rx: 75, ry: 50, col: C.violet, name: 'PCC', full: 'tylny zakręt obręczy', medial: true },
+  insula: { x: -100, y: 55, rx: 85, ry: 42, col: C.green, name: 'Wyspa', full: 'kora wyspy', medial: true },
+  s1: { x: 40, y: -270, rx: 55, ry: 70, col: C.yellow, name: 'S1', full: 'kora czuciowa', medial: false },
+  vis: { x: 360, y: 60, rx: 75, ry: 55, col: C.pink, name: 'Kolor (V4)', full: 'kora wzrokowa', medial: false }
+};
+
+// ---------- timeline of brain state ----------
+function state(t) {
+  const s = {};
+  // overall activity: busy → calmer after induction
+  s.activity = lerp(1, 0.5, ramp(t, 20, 30));
+  // region intensity
+  s.dacc = lerp(0.95, 0.18, ramp(t, 33, 40));
+  s.dlpfc = 0.75;
+  s.insula = lerp(0.45, 0.9, ramp(t, 49, 56));
+  s.dmn = lerp(0.75, 0.4, ramp(t, 65, 72));
+  // connections
+  s.cInsula = lerp(0.2, 1, ramp(t, 49, 56));
+  s.cDmn = lerp(0.85, 0.08, ramp(t, 65, 72));
+  // pain scene: ACC reduction for unpleasantness
+  s.painAcc = lerp(0.85, 0.3, ramp(t, 95, 100));
+  s.vis = ramp(t, 107, 111) * (1 - ramp(t, 114, 116.5));
+  // which regions/connections to highlight
+  const focus = {};
+  if (t >= 30 && t < 46) focus.dacc = 1;
+  if (t >= 46 && t < 62) { focus.dlpfc = 1; focus.insula = 1; focus.cInsula = 1; }
+  if (t >= 62 && t < 78) { focus.dlpfc = 1; focus.mpfc = 1; focus.pcc = 1; focus.cDmn = 1; }
+  if (t >= 90 && t < 102) { focus.dacc = 1; focus.s1 = 1; }
+  if (t >= 102 && t < 114) { focus.vis = 1; }
+  if (t >= 126 && t < 140) { focus.dacc = 1; focus.dlpfc = 1; focus.insula = 1; focus.mpfc = 1; focus.pcc = 1; focus.cInsula = 1; focus.cDmn = 1; }
+  s.focus = focus;
+  s.anyFocus = Object.keys(focus).length > 0;
+  return s;
+}
+
+// smooth focus weights (cross-fade around scene boundaries)
+function focusW(t, key) {
+  let acc = 0;
+  for (let k = -4; k <= 4; k++) {
+    const st = state(t + k * 0.15);
+    acc += st.focus[key] ? 1 : 0;
+  }
+  return acc / 9;
+}
+function anyFocusW(t) {
+  let acc = 0;
+  for (let k = -4; k <= 4; k++) acc += state(t + k * 0.15).anyFocus ? 1 : 0;
+  return acc / 9;
+}
+
+// ---------- drawing: background ----------
+const stars = [];
+(function () { const r = mulberry32(3); for (let i = 0; i < 180; i++) stars.push({ x: r() * W, y: r() * H, z: 0.2 + r() * 0.8, ph: r() * 10 }); })();
+function drawBackground(t) {
+  const g = ctx.createRadialGradient(W * 0.35, H * 0.5, 50, W * 0.5, H * 0.5, W * 0.8);
+  g.addColorStop(0, '#0f1a4a'); g.addColorStop(0.55, '#080d2a'); g.addColorStop(1, '#03050f');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    const x = (s.x + t * 6 * s.z) % W, y = s.y + Math.sin(t * 0.3 + s.ph) * 6;
+    const a = 0.15 + 0.35 * s.z * (0.6 + 0.4 * Math.sin(t * 1.3 + s.ph));
+    ctx.fillStyle = `rgba(170,190,255,${a})`;
+    ctx.fillRect(x, y, 1.6 * s.z + 0.4, 1.6 * s.z + 0.4);
+  }
+}
+
+function drawSpiral(t, cx, cy, alpha, scale = 1) {
+  if (alpha <= 0.001) return;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(t * 0.6);
+  ctx.lineWidth = 3;
+  for (let arm = 0; arm < 2; arm++) {
+    ctx.beginPath();
+    for (let i = 0; i < 900; i++) {
+      const th = i * 0.045;
+      const r = th * 30 * scale;
+      const x = Math.cos(th + arm * Math.PI) * r, y = Math.sin(th + arm * Math.PI) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = rgba(arm ? C.violet : C.cyan, 0.22 * alpha);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------- drawing: brain ----------
+function regionGlow(reg, inten, hl, t) {
+  const pulse = 0.9 + 0.1 * Math.sin(t * 2.2 + reg.x * 0.01);
+  const a = clamp(inten * pulse);
+  const g = ctx.createRadialGradient(reg.x, reg.y, 0, reg.x, reg.y, Math.max(reg.rx, reg.ry) * 1.6);
+  g.addColorStop(0, rgba(reg.col, 0.85 * a));
+  g.addColorStop(0.45, rgba(reg.col, 0.35 * a));
+  g.addColorStop(1, rgba(reg.col, 0));
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(reg.x, reg.y, reg.rx * 1.6, reg.ry * 1.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  if (hl > 0.01) {
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = rgba(reg.col, 0.9 * hl);
+    if (reg.medial) ctx.setLineDash([10, 8]);
+    ctx.lineDashOffset = -t * 20;
+    ctx.beginPath();
+    ctx.ellipse(reg.x, reg.y, reg.rx, reg.ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function regionLabel(reg, hl, dx, dy) {
+  if (hl <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = hl;
+  const lx = reg.x + dx, ly = reg.y + dy;
+  ctx.strokeStyle = rgba(reg.col, 0.8);
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(reg.x + Math.sign(dx) * reg.rx * 0.6, reg.y + Math.sign(dy) * reg.ry * 0.6); ctx.lineTo(lx, ly); ctx.stroke();
+  ctx.fillStyle = reg.col;
+  ctx.beginPath(); ctx.arc(lx, ly, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.font = `700 30px ${FONT}`;
+  ctx.textAlign = dx < 0 ? 'right' : 'left';
+  ctx.textBaseline = 'middle';
+  const tx = lx + (dx < 0 ? -14 : 14);
+  ctx.fillStyle = C.text;
+  ctx.fillText(reg.name, tx, ly - 4);
+  ctx.font = `400 19px ${FONT}`;
+  ctx.fillStyle = C.muted;
+  ctx.fillText(reg.full, tx, ly + 24);
+  ctx.restore();
+}
+
+function connection(a, b, strength, hl, t, col, bend = -80) {
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + bend;
+  const vis = clamp(0.15 + 0.85 * hl);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  // base line
+  ctx.strokeStyle = rgba(col, (0.12 + 0.5 * strength) * vis);
+  ctx.lineWidth = 2 + 10 * strength;
+  if (strength < 0.35) { ctx.setLineDash([6, 14]); }
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(mx, my, b.x, b.y); ctx.stroke();
+  ctx.setLineDash([]);
+  // travelling pulses
+  const n = Math.round(1 + strength * 7);
+  for (let i = 0; i < n; i++) {
+    const k = ((t * (0.25 + 0.35 * strength)) + i / n) % 1;
+    const x = (1 - k) * (1 - k) * a.x + 2 * (1 - k) * k * mx + k * k * b.x;
+    const y = (1 - k) * (1 - k) * a.y + 2 * (1 - k) * k * my + k * k * b.y;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 10 + 14 * strength);
+    g.addColorStop(0, rgba('#ffffff', 0.9 * vis * (0.3 + 0.7 * strength)));
+    g.addColorStop(0.3, rgba(col, 0.7 * vis * (0.3 + 0.7 * strength)));
+    g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, 10 + 14 * strength, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBrain(t, cx, cy, sc, alpha) {
+  if (alpha <= 0.001) return;
+  const st = state(t);
+  const af = anyFocusW(t);
+  const dim = 1 - 0.55 * af; // non-focused regions dim when something is focused
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  const breathe = 1 + 0.008 * Math.sin(t * 0.9);
+  ctx.scale(sc * breathe, sc * breathe);
+
+  // brainstem
+  ctx.save();
+  ctx.fillStyle = '#121a44';
+  ctx.strokeStyle = rgba(C.cyan, 0.35);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(140, 170); ctx.bezierCurveTo(170, 260, 175, 330, 160, 400);
+  ctx.lineTo(225, 400); ctx.bezierCurveTo(235, 320, 230, 240, 230, 160); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // cerebellum
+  ctx.beginPath(); ctx.ellipse(320, 200, 150, 82, -0.1, 0, Math.PI * 2);
+  const cg = ctx.createRadialGradient(320, 190, 10, 320, 200, 160);
+  cg.addColorStop(0, '#1d2a66'); cg.addColorStop(1, '#0e1640');
+  ctx.fillStyle = cg; ctx.fill(); ctx.stroke();
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = rgba(C.cyan, 0.18); ctx.lineWidth = 2;
+  for (let i = -6; i <= 6; i++) {
+    ctx.beginPath(); ctx.moveTo(160, 200 + i * 13); ctx.quadraticCurveTo(320, 185 + i * 15, 480, 200 + i * 13); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+
+  // cortex fill
+  const g = ctx.createRadialGradient(-80, -120, 40, 0, -40, 560);
+  g.addColorStop(0, '#26357e'); g.addColorStop(0.6, '#152056'); g.addColorStop(1, '#0b1238');
+  ctx.fillStyle = g;
+  ctx.fill(outline);
+
+  // gyri / sulci
+  ctx.save();
+  ctx.clip(outline);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const pts of sulci) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const xc = (pts[i][0] + pts[i + 1][0]) / 2, yc = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], xc, yc);
+    }
+    ctx.strokeStyle = 'rgba(5,8,30,0.35)'; ctx.lineWidth = 6; ctx.stroke();
+    ctx.strokeStyle = rgba(C.cyan, 0.10); ctx.lineWidth = 2; ctx.stroke();
+  }
+  // lateral (Sylvian) and central sulcus
+  ctx.strokeStyle = 'rgba(3,5,22,0.85)'; ctx.lineWidth = 11;
+  ctx.beginPath(); ctx.moveTo(-285, 70); ctx.bezierCurveTo(-150, 20, 50, 10, 200, -60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-10, -365); ctx.bezierCurveTo(-40, -250, 10, -170, -60, 5); ctx.stroke();
+  // sparks of neural activity
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of sparks) {
+    const v = Math.pow(Math.max(0, Math.sin(t * s.f + s.ph)), 10) * st.activity;
+    if (v < 0.03) continue;
+    ctx.fillStyle = `rgba(160,220,255,${0.9 * v})`;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.s * (1 + v), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // outline glow
+  ctx.save();
+  ctx.shadowColor = rgba(C.cyan, 0.8); ctx.shadowBlur = 25;
+  ctx.strokeStyle = rgba(C.cyan, 0.75); ctx.lineWidth = 3;
+  ctx.stroke(outline);
+  ctx.restore();
+
+  // regions
+  const f = k => focusW(t, k);
+  const show = (k, base) => base * (f(k) > 0 ? lerp(dim, 1, f(k)) : dim);
+  const painScene = clamp(win(t, 90, 102, 1, 1));
+  const daccI = lerp(st.dacc, st.painAcc, painScene);
+  regionGlow(R.dlpfc, show('dlpfc', st.dlpfc), f('dlpfc'), t);
+  regionGlow(R.dacc, show('dacc', daccI), f('dacc'), t);
+  regionGlow(R.mpfc, show('mpfc', st.dmn), f('mpfc'), t);
+  regionGlow(R.pcc, show('pcc', st.dmn), f('pcc'), t);
+  regionGlow(R.insula, show('insula', st.insula), f('insula'), t);
+  regionGlow(R.s1, show('s1', 0.6) * (0.35 + 0.65 * f('s1')), f('s1'), t);
+  // visual colour area: rainbow when activated
+  if (st.vis > 0 || f('vis') > 0) {
+    const hue = (t * 60) % 360;
+    const vr = Object.assign({}, R.vis, { col: hslHex(hue, 90, 65) });
+    regionGlow(vr, show('vis', 0.15 + 0.85 * st.vis), f('vis'), t);
+  } else regionGlow(R.vis, show('vis', 0.15), 0, t);
+
+  // connections
+  connection(R.dlpfc, R.insula, st.cInsula, f('cInsula'), t, C.green, 40);
+  connection(R.dlpfc, R.mpfc, st.cDmn, f('cDmn'), t, C.violet, -40);
+  connection(R.dlpfc, R.pcc, st.cDmn, f('cDmn'), t, C.violet, -170);
+
+  // labels
+  const L = k => f(k) * (t < 125.5 || t > 140 ? 1 : 0);
+  regionLabel(R.dlpfc, L('dlpfc'), 60, -200);
+  regionLabel(R.dacc, L('dacc'), -80, -300);
+  regionLabel(R.mpfc, L('mpfc'), 40, 200);
+  regionLabel(R.pcc, L('pcc'), 230, -230);
+  regionLabel(R.insula, L('insula'), -120, 260);
+  regionLabel(R.s1, L('s1'), 200, -110);
+  regionLabel(R.vis, f('vis'), 40, 250);
+
+  ctx.restore();
+}
+
+function hslHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+  return '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------- text helpers ----------
+function wrap(text, maxW) {
+  const words = text.split(' ');
+  const lines = []; let cur = '';
+  for (const w of words) {
+    const tt = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(tt).width > maxW && cur) { lines.push(cur); cur = w; } else cur = tt;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function para(text, x, y, maxW, size, color, lh, weight = 400, alpha = 1) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  const lines = wrap(text, maxW);
+  lines.forEach((l, i) => ctx.fillText(l, x, y + i * lh));
+  ctx.restore();
+  return y + lines.length * lh;
+}
+function chip(text, x, y, col, alpha) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `700 20px ${FONT}`;
+  const w = ctx.measureText(text).width + 32;
+  ctx.fillStyle = rgba(col, 0.16); ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = 1.5;
+  roundRect(x, y, w, 38, 19); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillText(text, x + 16, y + 20);
+  ctx.restore();
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function source(text, alpha) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `italic 400 20px ${FONT}`; ctx.fillStyle = C.faint; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, PX, 1010);
+  ctx.restore();
+}
+function bar(label, x, y, w, v, col, alpha, sub) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `600 22px ${FONT}`; ctx.fillStyle = C.text; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.fillText(label, x, y);
+  if (sub) { ctx.font = `400 18px ${FONT}`; ctx.fillStyle = C.muted; ctx.textAlign = 'right'; ctx.fillText(sub, x + w, y); }
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; roundRect(x, y + 14, w, 22, 11); ctx.fill();
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, rgba(col, 0.6)); g.addColorStop(1, col);
+  ctx.fillStyle = g; roundRect(x, y + 14, Math.max(22, w * v), 22, 11); ctx.fill();
+  ctx.shadowColor = col; ctx.shadowBlur = 18; ctx.fill();
+  ctx.restore();
+}
+
+// ---------- panel scenes ----------
+const PX = 1130, PW = 700;
+
+function header(t, s, e, chipText, chipCol, title) {
+  const a = win(t, s, e);
+  const slide = (1 - ease((t - s) / 1)) * 30;
+  ctx.save(); ctx.translate(slide, 0);
+  if (chipText) chip(chipText, PX, 150, chipCol, a);
+  ctx.globalAlpha = a;
+  ctx.font = `800 54px ${FONT}`; ctx.fillStyle = C.text; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  const lines = wrap(title, PW);
+  lines.forEach((l, i) => ctx.fillText(l, PX, 210 + i * 64));
+  ctx.restore();
+  return { a, y: 210 + lines.length * 64 + 26 };
+}
+
+function bodyLines(t, s, items, y, a, gap = 18) {
+  // items appear one by one
+  items.forEach((it, i) => {
+    const ia = a * clamp((t - s - 0.8 - i * 1.4) / 0.8);
+    const dy = (1 - clamp((t - s - 0.8 - i * 1.4) / 0.8)) * 14;
+    const txt = typeof it === 'string' ? it : it.t;
+    const col = typeof it === 'string' ? C.text : (it.c || C.text);
+    const size = (typeof it === 'object' && it.size) || 30;
+    const weight = (typeof it === 'object' && it.w) || 400;
+    if (typeof it === 'object' && it.dot) {
+      ctx.save(); ctx.globalAlpha = ia; ctx.fillStyle = it.dot;
+      ctx.shadowColor = it.dot; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(PX + 9, y + dy + size * 0.62, 8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      y = para(txt, PX + 34, y + dy, PW - 34, size, col, size * 1.42, weight, ia) - dy + gap;
+    } else {
+      y = para(txt, PX, y + dy, PW, size, col, size * 1.42, weight, ia) - dy + gap;
+    }
+  });
+  return y;
+}
+
+function sceneTitle(t) {
+  const a = win(t, 0, 8.2, 1.5, 1.2);
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `600 26px ${FONT}`; ctx.fillStyle = C.cyan;
+  ctx.fillText('NEUROBIOLOGIA  ·  FILM EDUKACYJNY', W / 2, 400);
+  ctx.font = `900 120px ${FONT}`;
+  const g = ctx.createLinearGradient(W / 2 - 600, 0, W / 2 + 600, 0);
+  g.addColorStop(0, '#9fe8ff'); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, '#cdb4ff');
+  ctx.fillStyle = g; ctx.shadowColor = rgba(C.cyan, 0.6); ctx.shadowBlur = 40;
+  ctx.fillText('Mózg w hipnozie', W / 2, 510);
+  ctx.shadowBlur = 0;
+  ctx.font = `400 38px ${FONT}`; ctx.fillStyle = C.muted;
+  ctx.fillText('Co naprawdę dzieje się w Twojej głowie?', W / 2, 620);
+  ctx.restore();
+}
+
+function sceneWhat(t) {
+  const s = 8, e = 20; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'WSTĘP', C.cyan, 'Czym jest hipnoza?');
+  let yy = bodyLines(t, s, [
+    { t: 'stan silnie skupionej uwagi', dot: C.cyan },
+    { t: 'mniejsza świadomość otoczenia', dot: C.violet },
+    { t: 'większa podatność na sugestie', dot: C.green }
+  ], y, a, 14);
+  bodyLines(t, s + 3.2, [{ t: 'To nie jest sen — w badaniu EEG mózg pozostaje w stanie czuwania.', c: C.muted, size: 28 }], yy + 20, a);
+}
+
+function sceneInduction(t) {
+  const s = 20, e = 30; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'INDUKCJA', C.violet, 'Uwaga zawęża się jak snop światła');
+  bodyLines(t, s, [
+    'Hipnotyzer prowadzi uwagę: głos, oddech, wyobrażenia.',
+    { t: 'Bodźce z otoczenia schodzą na dalszy plan, a „szum” aktywności w mózgu się uspokaja.', c: C.muted }
+  ], y, a);
+}
+
+function sceneChange1(t) {
+  const s = 30, e = 46; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'ZMIANA 1 / 3', C.orange, 'Wycisza się wewnętrzny „alarm”');
+  let yy = bodyLines(t, s, [
+    'Spada aktywność grzbietowej przedniej kory zakrętu obręczy (dACC) — węzła sieci istotności, która ocenia, czy coś wymaga reakcji.',
+    { t: 'Efekt: mniej analizowania i zamartwiania się tym, co dzieje się wokół.', c: C.muted }
+  ], y, a);
+  const st = state(t);
+  bar('Aktywność dACC', PX, Math.max(yy + 50, 760), PW, st.dacc, C.orange, a * clamp((t - s - 2) / 1), st.dacc < 0.5 ? '↓ spadek' : '');
+  source('Jiang i in., Cerebral Cortex, 2016 (Stanford, fMRI)', a);
+}
+
+function sceneChange2(t) {
+  const s = 46, e = 62; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'ZMIANA 2 / 3', C.green, 'Mocniejsze połączenie mózg ↔ ciało');
+  let yy = bodyLines(t, s, [
+    'Rośnie łączność między grzbietowo-boczną korą przedczołową (DLPFC) a wyspą — obszarem, który monitoruje stan ciała.',
+    { t: 'Dlatego w hipnozie łatwiej wpływać na odczuwanie bólu, oddech czy napięcie mięśni.', c: C.muted }
+  ], y, a);
+  const st = state(t);
+  bar('Łączność DLPFC ↔ wyspa', PX, Math.max(yy + 50, 780), PW, st.cInsula, C.green, a * clamp((t - s - 2) / 1), st.cInsula > 0.6 ? '↑ wzrost' : '');
+  source('Jiang i in., Cerebral Cortex, 2016 (Stanford, fMRI)', a);
+}
+
+function sceneChange3(t) {
+  const s = 62, e = 78; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'ZMIANA 3 / 3', C.violet, 'Działanie bez „obserwatora”');
+  let yy = bodyLines(t, s, [
+    'Słabnie łączność między DLPFC a siecią stanu spoczynkowego (DMN), m.in. przyśrodkową korą przedczołową i tylnym zakrętem obręczy.',
+    { t: 'Działasz, ale mniej przyglądasz się sobie — stąd wrażenie, że ruchy „dzieją się same”.', c: C.muted }
+  ], y, a);
+  const st = state(t);
+  bar('Łączność DLPFC ↔ DMN', PX, Math.max(yy + 50, 800), PW, st.cDmn, C.violet, a * clamp((t - s - 2) / 1), st.cDmn < 0.5 ? '↓ spadek' : '');
+  source('Jiang i in., Cerebral Cortex, 2016 (Stanford, fMRI)', a);
+}
+
+function sceneWaves(t) {
+  const s = 78, e = 90; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'FALE MÓZGOWE', C.cyan, 'Więcej fal theta');
+  let yy = bodyLines(t, s, [
+    'U osób bardzo podatnych EEG często pokazuje więcej fal theta (4–8 Hz), typowych dla głębokiego relaksu i wyobraźni.',
+    { t: 'Wyniki różnią się jednak między badaniami.', c: C.muted, size: 26 }
+  ], y, a);
+  // EEG trace
+  const top = Math.max(yy + 20, 700), h = 200;
+  const k = ramp(t, s + 2, s + 9);
+  const theta = lerp(0.25, 1, k), alpha = lerp(0.7, 0.45, k), beta = lerp(0.55, 0.2, k);
+  ctx.save(); ctx.globalAlpha = a * clamp((t - s - 1.5) / 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.04)'; roundRect(PX, top, PW, h, 16); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  for (let gx = PX; gx < PX + PW; gx += 50) { ctx.beginPath(); ctx.moveTo(gx, top); ctx.lineTo(gx, top + h); ctx.stroke(); }
+  ctx.beginPath();
+  const pps = 320;
+  const nz = mulberry32(1);
+  for (let x = 0; x <= PW; x += 2) {
+    const tt = t - (PW - x) / pps;
+    const v = theta * Math.sin(2 * Math.PI * 6 * tt) * 0.9 + alpha * Math.sin(2 * Math.PI * 10 * tt + 1) * 0.6
+      + beta * (Math.sin(2 * Math.PI * 21 * tt + 2) * 0.35 + Math.sin(2 * Math.PI * 27 * tt) * 0.25);
+    const yv = top + h / 2 - v * 55;
+    if (x === 0) ctx.moveTo(PX + x, yv); else ctx.lineTo(PX + x, yv);
+  }
+  ctx.strokeStyle = C.cyan; ctx.lineWidth = 2.5; ctx.shadowColor = C.cyan; ctx.shadowBlur = 10; ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = `600 18px ${FONT}`; ctx.fillStyle = C.muted; ctx.textBaseline = 'top';
+  ctx.fillText('EEG (schemat)', PX + 14, top + 10);
+  // band chips
+  const bands = [['beta', beta, C.pink], ['alfa', alpha, C.yellow], ['theta', theta, C.cyan]];
+  bands.forEach((b, i) => {
+    const bx = PX + i * 240, by = top + h + 24;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; roundRect(bx, by, 220, 14, 7); ctx.fill();
+    ctx.fillStyle = b[2]; roundRect(bx, by, 220 * b[1], 14, 7); ctx.fill();
+    ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.text; ctx.fillText(b[0], bx, by + 22);
+  });
+  ctx.restore();
+}
+
+function scenePain(t) {
+  const s = 90, e = 102; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'BÓL', C.red, 'Ból staje się mniej przykry');
+  let yy = bodyLines(t, s, [
+    'Gdy sugerowano, że ból jest mniej nieprzyjemny, zmieniała się aktywność przedniej kory obręczy, a kora czuciowa (S1) reagowała podobnie jak wcześniej.',
+    { t: 'Hipnoza wpływa głównie na to, jak bardzo ból przeszkadza.', c: C.muted }
+  ], y, a);
+  const st = state(t);
+  const ba = a * clamp((t - s - 2.5) / 1);
+  const by = Math.max(yy + 40, 790);
+  bar('Natężenie bodźca  (S1)', PX, by, PW, 0.7, C.yellow, ba, 'bez zmian');
+  bar('Nieprzyjemność  (ACC)', PX, by + 80, PW, st.painAcc, C.red, ba, st.painAcc < 0.5 ? '↓ spadek' : '');
+  source('Rainville i in., Science, 1997', a);
+}
+
+function sceneColour(t) {
+  const s = 102, e = 114; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'PERCEPCJA', C.pink, 'Sugestia zmienia to, co „widzisz”');
+  let yy = bodyLines(t, s, [
+    'Osobom w hipnozie mówiono, że szary obraz jest kolorowy. Obszary kory wzrokowej przetwarzające kolor aktywowały się tak, jakby kolor naprawdę był widoczny.'
+  ], y, a);
+  const k = state(t).vis;
+  const top = Math.max(yy + 30, 720);
+  ctx.save(); ctx.globalAlpha = a * clamp((t - s - 2) / 1);
+  const cols = 6, sz = 96, gap = 18;
+  for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) {
+    const i = r * cols + c;
+    const gray = 70 + ((i * 37) % 5) * 22;
+    const hue = (i * 47 + 10) % 360;
+    const ch = hslHex(hue, 85, 58);
+    const n = parseInt(ch.slice(1), 16);
+    const kk = clamp(k * 1.4 - i * 0.03);
+    const rr = Math.round(lerp(gray, n >> 16 & 255, kk)), gg = Math.round(lerp(gray, n >> 8 & 255, kk)), bb = Math.round(lerp(gray, n & 255, kk));
+    ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
+    roundRect(PX + c * (sz + gap), top + r * (sz + gap), sz, sz, 14); ctx.fill();
+  }
+  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = C.muted; ctx.textBaseline = 'top';
+  ctx.fillText(k < 0.5 ? 'obraz: odcienie szarości' : 'sugestia: „widzisz kolory”', PX, top + 2 * (sz + gap) + 4);
+  ctx.restore();
+  source('Kosslyn i in., American Journal of Psychiatry, 2000', a);
+}
+
+function sceneWho(t) {
+  const s = 114, e = 126; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'PODATNOŚĆ', C.yellow, 'Nie każdy reaguje tak samo');
+  let yy = bodyLines(t, s, [
+    'Podatność na hipnozę to dość stała cecha. Około 10–15% osób reaguje bardzo silnie, większość umiarkowanie, a u części hipnoza prawie nie działa.'
+  ], y, a);
+  const top = Math.max(yy + 30, 650);
+  const r = mulberry32(11);
+  const idx = [...Array(100).keys()].sort(() => r() - 0.5);
+  const cat = new Array(100);
+  idx.forEach((v, i) => cat[v] = i < 12 ? 2 : i < 75 ? 1 : 0);
+  ctx.save(); ctx.globalAlpha = a;
+  for (let i = 0; i < 100; i++) {
+    const cx = PX + 22 + (i % 20) * 34, cy = top + 22 + Math.floor(i / 20) * 34;
+    const ap = clamp((t - s - 2 - i * 0.02) / 0.6);
+    if (ap <= 0) continue;
+    const k = clamp((t - s - 5) / 1.2);
+    const col = cat[i] === 2 ? C.yellow : cat[i] === 1 ? '#7f8cc4' : '#2c335a';
+    ctx.fillStyle = k > 0 ? (cat[i] === 2 ? rgba(C.yellow, lerp(0.5, 1, k)) : col) : '#7f8cc4';
+    ctx.globalAlpha = a * ap;
+    if (cat[i] === 2 && k > 0) { ctx.shadowColor = C.yellow; ctx.shadowBlur = 16 * k; } else ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  const la = a * clamp((t - s - 6) / 1);
+  ctx.globalAlpha = la;
+  const ly = top + 5 * 34 + 30;
+  [[C.yellow, 'bardzo podatni'], ['#7f8cc4', 'umiarkowanie'], ['#2c335a', 'słabo / wcale']].forEach((l, i) => {
+    ctx.fillStyle = l[0]; ctx.beginPath(); ctx.arc(PX + 10 + i * 230, ly, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.font = `500 20px ${FONT}`; ctx.fillStyle = C.muted; ctx.textBaseline = 'middle'; ctx.fillText(l[1], PX + 28 + i * 230, ly);
+  });
+  ctx.globalAlpha = la * 0.8;
+  ctx.font = `400 17px ${FONT}`; ctx.fillStyle = C.faint;
+  ctx.fillText('proporcje przybliżone, ilustracyjne', PX, ly + 36);
+  ctx.restore();
+}
+
+function sceneSummary(t) {
+  const s = 126, e = 140; if (t < s - 1 || t > e + 1) return;
+  const { a, y } = header(t, s, e, 'PODSUMOWANIE', C.cyan, 'Co zmienia się w hipnozie?');
+  let yy = bodyLines(t, s, [
+    { t: 'wycisza się „alarm” (dACC)', dot: C.orange },
+    { t: 'mocniejsza kontrola mózg–ciało (DLPFC ↔ wyspa)', dot: C.green },
+    { t: 'działanie oddziela się od autorefleksji (DLPFC ↔ DMN)', dot: C.violet }
+  ], y, a, 10);
+  bodyLines(t, s + 4.5, [
+    { t: 'Nie tracisz kontroli — mózg inaczej kieruje uwagą.', w: 700, size: 30 },
+    { t: 'Zastosowania: ból przewlekły, lęk, zespół jelita drażliwego, rzucanie palenia.', c: C.muted, size: 26 }
+  ], yy + 20, a, 12);
+}
+
+function sceneOutro(t) {
+  const a = win(t, 140, DURATION + 2, 1.2, 1);
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a * clamp((DURATION - t) / 1.2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `800 64px ${FONT}`; ctx.fillStyle = C.text;
+  ctx.fillText('Mózg w hipnozie', W / 2, 330);
+  ctx.font = `600 24px ${FONT}`; ctx.fillStyle = C.cyan;
+  ctx.fillText('ŹRÓDŁA', W / 2, 450);
+  ctx.font = `400 26px ${FONT}`; ctx.fillStyle = C.muted;
+  ['Jiang H. i in. (2016). Brain activity and functional connectivity associated with hypnosis. Cerebral Cortex.',
+    'Rainville P. i in. (1997). Pain affect encoded in human anterior cingulate. Science.',
+    'Kosslyn S. M. i in. (2000). Hypnotic visual illusion alters color processing in the brain. Am J Psychiatry.'
+  ].forEach((l, i) => ctx.fillText(l, W / 2, 510 + i * 46));
+  ctx.font = `400 20px ${FONT}`; ctx.fillStyle = C.faint;
+  ctx.fillText('Schemat mózgu jest uproszczony i nie oddaje skali. Linia przerywana = struktura położona głębiej lub na przyśrodkowej powierzchni półkuli.', W / 2, 720);
+  ctx.fillText('Film ma charakter edukacyjny i nie zastępuje porady specjalisty.', W / 2, 756);
+  ctx.restore();
+}
+
+function legend(t) {
+  const a = clamp(Math.min((t - 30) / 1, (126 - t) / 1)) * 0.85;
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.setLineDash([8, 6]); ctx.strokeStyle = C.muted; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(110, 1000, 26, 14, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = `400 18px ${FONT}`; ctx.fillStyle = C.faint; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillText('struktura położona głębiej / przyśrodkowo  ·  schemat uproszczony', 150, 1000);
+  ctx.restore();
+}
+
+function progress(t) {
+  const a = clamp(Math.min((t - 8) / 1, (140 - t) / 1)) * 0.7;
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(0, H - 4, W, 4);
+  ctx.fillStyle = C.cyan; ctx.fillRect(0, H - 4, W * t / DURATION, 4);
+  ctx.restore();
+}
+
+// ---------- master render ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  drawBackground(t);
+
+  // hypnotic spiral: strong in title, visible during induction, outro
+  const spA = 0.9 * win(t, 0, 8.5, 0.5, 1.5) + 0.7 * win(t, 20, 30, 1.5, 2) + 0.5 * win(t, 140, DURATION + 2, 1.5, 1);
+  const spX = t < 15 ? W / 2 : t < 60 ? 560 : W / 2;
+  drawSpiral(t, spX, t < 15 || t > 135 ? H / 2 : 560, spA, 1.4);
+
+  // brain placement
+  const toMain = ramp(t, 6.5, 9.5), toOut = ramp(t, 139, 141.5);
+  const bx = lerp(lerp(W / 2, 560, toMain), W / 2, toOut);
+  const by = lerp(lerp(560, 560, toMain), 560, toOut);
+  const bs = lerp(lerp(0.75, 0.88, toMain), 0.6, toOut);
+  const ba = lerp(lerp(0.28, 1, toMain), 0.12, toOut) * clamp(t / 1.2) * clamp((DURATION - t) / 1.2);
+  drawBrain(t, bx, by, bs, ba);
+
+  // induction "spotlight" ring
+  const ia = win(t, 21, 30, 1, 1.5);
+  if (ia > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const k = ((t - 21) * 0.35 + i / 3) % 1;
+      const rr = lerp(520, 60, k);
+      ctx.strokeStyle = rgba(C.violet, ia * 0.5 * Math.sin(k * Math.PI));
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(560 + R.dlpfc.x * 0.88, 560 + R.dlpfc.y * 0.88, rr, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  sceneTitle(t);
+  sceneWhat(t);
+  sceneInduction(t);
+  sceneChange1(t);
+  sceneChange2(t);
+  sceneChange3(t);
+  sceneWaves(t);
+  scenePain(t);
+  sceneColour(t);
+  sceneWho(t);
+  sceneSummary(t);
+  sceneOutro(t);
+  legend(t);
+  progress(t);
+}
+window.render = render;
+window.DURATION = DURATION;
+
+// live preview when opened normally in a browser
+if (!location.hash.includes('static')) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
