@@ -123,9 +123,12 @@ function camTarget(id, t) {
   switch (id) {
     case 'intro': { const k = ease((t - 0.3) / (SC.intro.end - 0.6)); return { x: lerp(-40, 0, k), y: lerp(VERT ? 520 : 560, -40, k), z: lerp(VERT ? 0.34 : 0.3, 0.98, k) }; }
     case 'sen': return { x: 0, y: -40, z: 0.98 + 0.06 * p };
+    case 'kontakt': return VERT ? { x: -420, y: 0, z: 0.6 + 0.04 * p } : { x: -380, y: 30, z: 0.52 + 0.03 * p };
+    case 'fale': return { x: 0, y: -60, z: 0.92 + 0.05 * p };
+    case 'podswiadomosc': return VERT ? { x: 3400, y: 450, z: 0.52 + 0.03 * p } : { x: 3400, y: 380, z: 0.5 + 0.03 * p };
     case 'alarm': return VERT ? { x: -130, y: -95, z: 1.55 + 0.1 * p } : { x: -40, y: -80, z: 1.12 + 0.08 * p };
     case 'cialo': return VERT ? { x: 60, y: 760, z: 0.4 + 0.03 * p } : { x: 60, y: 640, z: 0.37 + 0.02 * p };
-    case 'obserwator': return VERT ? { x: 0, y: -260, z: 0.84 + 0.05 * p } : { x: 0, y: -300, z: 0.8 + 0.04 * p };
+    case 'krytyk': return VERT ? { x: 0, y: -260, z: 0.84 + 0.05 * p } : { x: 0, y: -300, z: 0.8 + 0.04 * p };
     case 'bol': return VERT ? { x: 120, y: 560, z: 0.43 + 0.03 * p } : { x: 120, y: 640, z: 0.4 + 0.02 * p };
     case 'koniec': return VERT ? { x: 0, y: 260, z: 0.5 - 0.03 * p } : { x: 0, y: 300, z: 0.5 - 0.03 * p };
   }
@@ -135,7 +138,8 @@ function camera(t) {
   const cur = camTarget(s.id, t);
   if (i === 0) return cur;
   const from = camTarget(TL.scenes[i - 1].id, s.start);
-  const k = ease((t - s.start) / 1.3);
+  const far = Math.hypot(cur.x - from.x, cur.y - from.y) > 1500;
+  const k = ease((t - s.start) / (far ? 1.9 : 1.3));
   return { x: lerp(from.x, cur.x, k), y: lerp(from.y, cur.y, k), z: Math.exp(lerp(Math.log(from.z), Math.log(cur.z), k)) };
 }
 function W2S(cam, x, y) { const s = BASE * cam.z; return [LY.vp.cx + (x - cam.x) * s, LY.vp.cy + (y - cam.y) * s]; }
@@ -336,7 +340,7 @@ function worldEffects(t) {
     ctx.restore();
   }
   // CIAŁO
-  const wC = sw('cialo', t), wO = sw('obserwator', t);
+  const wC = sw('cialo', t), wO = sw('krytyk', t);
   const linkIns = t < SC.cialo.start ? 0.2 : lerp(0.2, 1, ramp(t, SC.cialo.start + 0.8, SC.cialo.start + 3.5));
   const linkVis = Math.max(wC, sw('koniec', t) * 0.6, wO * 0.3, sw('bol', t) * 0.35);
   regionGlow(R.dlpfc, 0.25 + 0.6 * Math.max(wC, wO), Math.max(wC, wO), t, C.cyan, false);
@@ -356,16 +360,16 @@ function worldEffects(t) {
     ctx.restore();
   }
   // OBSERWATOR
-  const fadeO = ramp(t, SC.obserwator.start + 2.0, SC.obserwator.start + 5.0);
-  const dmn = t < SC.obserwator.start ? 0.85 : lerp(0.85, 0.06, fadeO);
+  const fadeO = ramp(t, SC.krytyk.start + 2.0, SC.krytyk.start + 5.0);
+  const dmn = t < SC.krytyk.start ? 0.85 : lerp(0.85, 0.06, fadeO);
   regionGlow(R.mpfc, (0.3 + 0.5 * wO) * lerp(1, 0.55, fadeO), wO, t);
   regionGlow(R.pcc, (0.3 + 0.5 * wO) * lerp(1, 0.55, fadeO), wO, t);
   link(R.dlpfc, R.mpfc, dmn, wO, t, C.violet, -40);
   link(R.dlpfc, R.pcc, dmn, wO, t, C.violet, -170);
   if (wO > 0.01) {
     const ex = 0, ey = -740;
-    const open = lerp(1, 0.04, ramp(t, SC.obserwator.start + 2.5, SC.obserwator.start + 5.6));
-    const blink = Math.max(0, 1 - Math.abs(lt('obserwator', t) - 1.3) * 8);
+    const open = lerp(1, 0.04, ramp(t, SC.krytyk.start + 2.5, SC.krytyk.start + 5.6));
+    const blink = Math.max(0, 1 - Math.abs(lt('krytyk', t) - 1.3) * 8);
     const o = open * (1 - blink * 0.9);
     const look = Math.sin(t * 0.8) * 20 * open;
     ctx.save(); ctx.globalAlpha = wO;
@@ -389,6 +393,49 @@ function worldEffects(t) {
     if (o < 0.3) { ctx.lineWidth = 5; for (let i = -3; i <= 3; i++) { const x = ex + i * 38; ctx.beginPath(); ctx.moveTo(x, ey + 8); ctx.lineTo(x + i * 6, ey + 40); ctx.stroke(); } }
     ctx.restore();
   }
+  // KONTAKT: głos terapeuty + aura świadomości
+  const wT = sw('kontakt', t);
+  if (wT > 0.01) {
+    const L = lt('kontakt', t), ix = -1000, iy = 20;
+    ctx.save(); ctx.globalAlpha = wT; ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.8);
+    const ag = ctx.createRadialGradient(-20, -40, 500, -20, -40, 900);
+    ag.addColorStop(0, rgba(C.yellow, 0)); ag.addColorStop(0.75, rgba(C.yellow, 0.10 + 0.06 * pulse)); ag.addColorStop(1, rgba(C.yellow, 0));
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.ellipse(-20, -40, 900, 900, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const k = frac(L * 0.55 + i / 5);
+      ctx.strokeStyle = rgba(C.yellow, (1 - k) * 0.85); ctx.lineWidth = 12 - 7 * k;
+      ctx.beginPath(); ctx.arc(ix, iy, 110 + k * 360, -0.55, 0.55); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    const ig = ctx.createRadialGradient(ix, iy, 10, ix, iy, 95);
+    ig.addColorStop(0, '#fff3c4'); ig.addColorStop(1, rgba(C.yellow, 0.6));
+    ctx.fillStyle = ig; ctx.shadowColor = C.yellow; ctx.shadowBlur = 40;
+    ctx.beginPath(); ctx.arc(ix, iy, 85 * (1 + 0.04 * pulse), 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#3a2a00';
+    ctx.beginPath(); ctx.rect(ix - 40, iy - 22, 26, 44); ctx.moveTo(ix - 14, iy - 22); ctx.lineTo(ix + 20, iy - 48); ctx.lineTo(ix + 20, iy + 48); ctx.lineTo(ix - 14, iy + 22); ctx.fill();
+    ctx.strokeStyle = '#3a2a00'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(ix + 22, iy, 30, -0.7, 0.7); ctx.stroke();
+    ctx.font = `700 64px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = C.yellow;
+    ctx.fillText('głos terapeuty', ix, iy + 190);
+    ctx.restore();
+  }
+  // FALE: spokojne, coraz wolniejsze fale wokół mózgu
+  const wF = sw('fale', t);
+  if (wF > 0.01) {
+    const L = lt('fale', t), slow = ramp(L, 0.5, 4);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const k = frac(L * lerp(0.9, 0.25, slow) + i / 5);
+      ctx.strokeStyle = rgba(mix(C.cyan, C.violet, slow), wF * (1 - k) * 0.55); ctx.lineWidth = lerp(3, 8, slow);
+      ctx.beginPath(); ctx.ellipse(-10, -80, 470 * (0.95 + k * 1.1), 350 * (0.95 + k * 1.1), 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // PODŚWIADOMOŚĆ: góra lodowa, furtka, ziarna sugestii
+  const wP = sw('podswiadomosc', t, 1.2);
+  if (wP > 0.01) drawIceberg(t, wP);
   // BÓL
   const wB = sw('bol', t);
   if (wB > 0.01) {
@@ -428,6 +475,82 @@ function worldEffects(t) {
     }
     ctx.restore();
   }
+}
+
+// ---------- góra lodowa (podświadomość) ----------
+const IX = 3400;
+const SEEDS = []; (function () { const r = mulberry32(77); for (let i = 0; i < 8; i++) SEEDS.push({ x: IX - 420 + r() * 840, y: 480 + r() * 520, c: [C.yellow, C.green, C.pink, C.teal][i % 4] }); })();
+function chunkStart(id, i) { const cs = TL.chunks.filter(c => c.scene === id); return cs[Math.min(i, cs.length - 1)].start; }
+function drawIceberg(t, w) {
+  const L = lt('podswiadomosc', t);
+  ctx.save(); ctx.globalAlpha = w;
+  // woda
+  const wg = ctx.createLinearGradient(0, 0, 0, 1500);
+  wg.addColorStop(0, 'rgba(40,110,200,0.32)'); wg.addColorStop(1, 'rgba(10,20,70,0.1)');
+  ctx.fillStyle = wg; ctx.fillRect(IX - 3000, 0, 6000, 2200);
+  // góra lodowa: część podwodna
+  const under = new Path2D(`M ${IX - 200} 0 L ${IX - 500} 250 L ${IX - 620} 600 L ${IX - 450} 950 L ${IX - 100} 1150 L ${IX + 300} 1100 L ${IX + 600} 800 L ${IX + 650} 450 L ${IX + 450} 150 L ${IX + 220} 0 Z`);
+  const ug = ctx.createLinearGradient(0, 0, 0, 1150);
+  ug.addColorStop(0, 'rgba(120,200,240,0.45)'); ug.addColorStop(1, 'rgba(60,70,170,0.35)');
+  ctx.fillStyle = ug; ctx.fill(under);
+  ctx.strokeStyle = rgba(C.cyan, 0.5); ctx.lineWidth = 5; ctx.stroke(under);
+  // czubek nad wodą
+  const tip = new Path2D(`M ${IX - 200} 0 L ${IX - 100} -260 L ${IX - 20} -330 L ${IX + 70} -240 L ${IX + 160} -120 L ${IX + 220} 0 Z`);
+  ctx.fillStyle = 'rgba(225,245,255,0.92)'; ctx.shadowColor = rgba(C.cyan, 0.8); ctx.shadowBlur = 30; ctx.fill(tip); ctx.shadowBlur = 0;
+  // powierzchnia wody
+  ctx.strokeStyle = rgba(C.cyan, 0.8); ctx.lineWidth = 5; ctx.beginPath();
+  for (let x = IX - 3000; x <= IX + 3000; x += 20) { const y = Math.sin(x * 0.012 + t * 2) * 10; x === IX - 3000 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  ctx.stroke();
+  ctx.textAlign = 'center'; ctx.font = `800 70px ${FONT}`;
+  ctx.fillStyle = C.text; ctx.fillText('świadomość', IX, -390);
+  ctx.save(); ctx.clip(under);
+  // furtka
+  const open = ramp(t, chunkStart('podswiadomosc', 1) + 0.6, chunkStart('podswiadomosc', 1) + 2.2);
+  const dx = IX, dy = 120, dw = 190, dh = 250;
+  const beam = ctx.createLinearGradient(0, dy, 0, 1150);
+  beam.addColorStop(0, rgba(C.yellow, 0.4 * open)); beam.addColorStop(1, rgba(C.yellow, 0));
+  ctx.fillStyle = beam; ctx.beginPath(); ctx.moveTo(dx - dw / 2, dy + dh); ctx.lineTo(dx + dw / 2, dy + dh); ctx.lineTo(dx + 450, 1200); ctx.lineTo(dx - 450, 1200); ctx.closePath(); ctx.fill();
+  const arch = () => { ctx.beginPath(); ctx.moveTo(dx - dw / 2, dy + dh); ctx.lineTo(dx - dw / 2, dy + dw / 2); ctx.arc(dx, dy + dw / 2, dw / 2, Math.PI, 0); ctx.lineTo(dx + dw / 2, dy + dh); ctx.closePath(); };
+  arch(); const lg = ctx.createRadialGradient(dx, dy + dh * 0.6, 10, dx, dy + dh * 0.6, dh);
+  lg.addColorStop(0, rgba('#fff6d0', 0.2 + 0.8 * open)); lg.addColorStop(1, rgba(C.yellow, 0.1 + 0.5 * open)); ctx.fillStyle = lg; ctx.fill();
+  ctx.save(); arch(); ctx.clip();
+  ctx.fillStyle = '#20306e'; ctx.fillRect(dx - dw / 2, dy, dw * (1 - open * 0.85), dh + 10); // skrzydło furtki
+  ctx.restore();
+  arch(); ctx.strokeStyle = C.yellow; ctx.lineWidth = 8; ctx.shadowColor = C.yellow; ctx.shadowBlur = 25; ctx.stroke(); ctx.shadowBlur = 0;
+  // słowa w głębi
+  const wStart = chunkStart('podswiadomosc', 2);
+  [['nawyki', -300, 500], ['emocje', 320, 450], ['przekonania', 0, 740], ['wspomnienia', -180, 940], ['marzenia', 290, 900]].forEach(([wd, ox, oy], i) => {
+    const k = clamp((t - wStart - i * 0.3) / 0.6);
+    if (k <= 0) return;
+    ctx.globalAlpha = w * easeOut(k) * 0.95;
+    ctx.font = `700 ${70}px ${FONT}`; ctx.fillStyle = C.text;
+    ctx.fillText(wd, IX + ox, oy + Math.sin(t * 1.2 + i) * 12 + (1 - easeOut(k)) * 40);
+  });
+  ctx.globalAlpha = w;
+  // ziarna sugestii przez furtkę
+  const sStart = chunkStart('podswiadomosc', 3);
+  ctx.globalCompositeOperation = 'lighter';
+  SEEDS.forEach((sd, i) => {
+    const k = (t - sStart - i * 0.28) / 1.6;
+    if (k <= 0) return;
+    let x, y;
+    if (k < 0.45) { const q = k / 0.45; x = dx; y = lerp(dy - 50, dy + dh, q); }
+    else { const q = easeOut((k - 0.45) / 0.55); x = lerp(dx, sd.x, q); y = lerp(dy + dh, sd.y, q); }
+    const bloom = clamp(k - 1);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 40 + 60 * bloom);
+    g.addColorStop(0, rgba('#ffffff', 0.95)); g.addColorStop(0.3, rgba(sd.c, 0.8)); g.addColorStop(1, rgba(sd.c, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 40 + 60 * bloom, 0, Math.PI * 2); ctx.fill();
+    if (bloom > 0) { // kiełkuje: płatki
+      ctx.strokeStyle = rgba(sd.c, 0.8 * bloom); ctx.lineWidth = 5;
+      for (let j = 0; j < 6; j++) { const a = j * Math.PI / 3 + t * 0.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 55 * bloom, y + Math.sin(a) * 55 * bloom); ctx.stroke(); }
+    }
+  });
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+  ctx.font = `800 76px ${FONT}`; ctx.fillStyle = C.pink;
+  if (VERT) { ctx.textAlign = 'center'; ctx.fillText('podświadomość', IX, 1230); }
+  else { ctx.textAlign = 'left'; ctx.fillText('podświadomość', IX + 690, 560); }
+  ctx.restore();
 }
 
 // ---------- efekty ekranowe ----------
@@ -530,7 +653,7 @@ function headline(t) {
       const tw = ctx.measureText(s.label).width + 66, th = size * 0.72;
       const y = LY.head.y + lines.length * lh + 18 + (1 - easeOut(k)) * 20;
       const x = LY.head.align === 'center' ? LY.head.x - tw / 2 : LY.head.x;
-      const col = { alarm: C.orange, cialo: C.green, obserwator: C.violet }[s.id] || C.cyan;
+      const col = { alarm: C.orange, cialo: C.green, krytyk: C.violet, fale: C.cyan, podswiadomosc: C.pink }[s.id] || C.cyan;
       ctx.fillStyle = rgba(col, 0.15); ctx.strokeStyle = rgba(col, 0.75); ctx.lineWidth = 2;
       roundRect(x, y, tw, th, th / 2); ctx.fill(); ctx.stroke();
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + 28, y + th / 2, 7, 0, Math.PI * 2); ctx.fill();
@@ -588,6 +711,57 @@ function painMeter(t) {
   ctx.fillStyle = g; ctx.shadowColor = C.red; ctx.shadowBlur = 16; roundRect(M.x, M.y + 18, Math.max(26, M.w * v), 26, 13); ctx.fill();
   ctx.restore();
 }
+function checklist(t) {
+  const w = sw('kontakt', t);
+  if (w <= 0.01) return;
+  const items = ['słyszysz głos terapeuty', 'wiesz, gdzie jesteś', 'możesz otworzyć oczy', 'nic wbrew sobie'];
+  const M = LY.meter, y0 = VERT ? 450 : 490, lh = VERT ? 72 : 62, fs = VERT ? 44 : 34;
+  ctx.save();
+  items.forEach((it, i) => {
+    const k = clamp((t - chunkStart('kontakt', i) - 0.2) / 0.45);
+    if (k <= 0) return;
+    const x = VERT ? 200 : M.x, y = y0 + i * lh + (1 - easeOut(k)) * 20;
+    ctx.globalAlpha = w * easeOut(k);
+    ctx.fillStyle = rgba(C.green, 0.2); ctx.strokeStyle = C.green; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x + 20, y, 20 * easeBack(k), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = C.green; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    const ck = clamp((t - chunkStart('kontakt', i) - 0.4) / 0.3);
+    ctx.beginPath(); ctx.moveTo(x + 10, y); ctx.lineTo(x + 10 + 7 * clamp(ck * 2), y + 7 * clamp(ck * 2));
+    if (ck > 0.5) ctx.lineTo(x + 17 + 14 * clamp(ck * 2 - 1), y + 7 - 16 * clamp(ck * 2 - 1));
+    ctx.stroke();
+    ctx.font = `600 ${fs}px ${FONT}`; ctx.fillStyle = C.text; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 10;
+    ctx.fillText(it, x + 56, y + 2); ctx.shadowBlur = 0;
+  });
+  ctx.restore();
+}
+function eeg(t) {
+  const w = sw('fale', t);
+  if (w <= 0.01) return;
+  const L = lt('fale', t), slow = ramp(L, 0.5, 4.5);
+  const M = LY.meter, x0 = M.x, y0 = VERT ? 450 : 500, ww = M.w, hh = VERT ? 190 : 180;
+  ctx.save(); ctx.globalAlpha = w * clamp((L - 0.3) / 0.5);
+  ctx.fillStyle = 'rgba(5,8,22,0.55)'; roundRect(x0, y0, ww, hh, 18); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+  for (let gx = x0 + 40; gx < x0 + ww; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + hh); ctx.stroke(); }
+  ctx.save(); roundRect(x0, y0, ww, hh, 18); ctx.clip();
+  ctx.beginPath();
+  for (let x = 0; x <= ww; x += 2) {
+    const tau = t - (ww - x) / 240;
+    const fast = 0.45 * Math.sin(2 * Math.PI * 17 * tau) + 0.3 * Math.sin(2 * Math.PI * 11 * tau + 1) + 0.15 * Math.sin(2 * Math.PI * 23 * tau);
+    const th = Math.sin(2 * Math.PI * 5.5 * tau) + 0.2 * Math.sin(2 * Math.PI * 9 * tau);
+    const v = lerp(fast, th, slow);
+    const y = y0 + hh / 2 - v * hh * 0.36;
+    x ? ctx.lineTo(x0 + x, y) : ctx.moveTo(x0 + x, y);
+  }
+  const col = mix(C.cyan, C.violet, slow);
+  ctx.strokeStyle = col; ctx.lineWidth = 3.5; ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
+  ctx.restore();
+  ctx.font = `600 ${VERT ? 28 : 24}px ${FONT}`; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.fillStyle = rgba(C.cyan, 1 - slow); ctx.fillText('szybkie fale: czuwanie, myślenie', x0 + 16, y0 + hh + 12);
+  ctx.fillStyle = rgba(C.violet, slow); ctx.fillText('wolne fale theta: głęboki relaks', x0 + 16, y0 + hh + 12);
+  ctx.restore();
+}
 function endCard(t) {
   const k = clamp((t - (SC.koniec.end - 3.0)) / 0.8);
   if (k <= 0) return;
@@ -608,7 +782,8 @@ function endCard(t) {
   if (VERT) { ctx.fillText('Na podstawie badań m.in.', W / 2, y); ctx.fillText('Uniwersytetu Stanforda (2016)', W / 2, y + 44); }
   else ctx.fillText('Na podstawie badań m.in. Uniwersytetu Stanforda (2016)', W / 2, y);
   ctx.font = `400 ${Math.round(24 * s)}px ${FONT}`; ctx.fillStyle = C.faint;
-  ctx.fillText('Schemat uproszczony. Film edukacyjny.', W / 2, y + (VERT ? 110 : 50));
+  ctx.fillText('Część treści przedstawia perspektywę hipnoterapii.', W / 2, y + (VERT ? 110 : 50));
+  ctx.fillText('Schemat uproszczony. Film edukacyjny.', W / 2, y + (VERT ? 150 : 86));
   ctx.restore();
 }
 
@@ -634,6 +809,8 @@ function render(t) {
   flash(t);
   headline(t);
   painMeter(t);
+  checklist(t);
+  eeg(t);
   subtitles(t);
   endCard(t);
   ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(0, H - 6, W, 6);

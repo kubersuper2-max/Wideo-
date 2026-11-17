@@ -1,71 +1,26 @@
 {
-  "glos": "mc_speech",
-  "tempo": 1.16,
+  "glos": "gosia",
+  "tempo": 0.94,
   "sceny": [
-    {
-      "id": "intro",
-      "naglowek": "Mózg w hipnozie",
-      "fragmenty": [
-        "Co tak naprawdę dzieje się w mózgu,",
-        "kiedy jesteś w hipnozie?"
-      ]
-    },
-    {
-      "id": "sen",
-      "naglowek": "To nie jest sen",
-      "fragmenty": [
-        "Po pierwsze: hipnoza to nie sen.",
-        "Mózg cały czas czuwa,",
-        "tylko uwaga skupia się na jednym punkcie,",
-        "jak światło latarki."
-      ]
-    },
-    {
-      "id": "alarm",
-      "naglowek": "Cichnie wewnętrzny alarm",
-      "etykieta": "przednia kora obręczy",
-      "fragmenty": [
-        "Wtedy cichnie część mózgu,",
-        "która stale sprawdza, czy coś ci grozi.",
-        "Przestajesz się martwić i analizować."
-      ]
-    },
-    {
-      "id": "cialo",
-      "naglowek": "Mózg mocniej słyszy ciało",
-      "etykieta": "kora przedczołowa + wyspa",
-      "fragmenty": [
-        "Jednocześnie mózg mocniej łączy się z ciałem.",
-        "Łatwiej mu wpłynąć na oddech,",
-        "napięcie mięśni, a nawet na ból."
-      ]
-    },
-    {
-      "id": "obserwator",
-      "naglowek": "Obserwator odpoczywa",
-      "etykieta": "sieć spoczynkowa mózgu",
-      "fragmenty": [
-        "Słabnie też wewnętrzny obserwator.",
-        "Robisz coś, ale mniej się przy tym oceniasz.",
-        "Dlatego ręka może unosić się jakby sama."
-      ]
-    },
-    {
-      "id": "bol",
-      "naglowek": "Ból mniej przeszkadza",
-      "fragmenty": [
-        "Stąd hipnoza pomaga przy bólu.",
-        "Sygnał bólu dalej dociera do mózgu,",
-        "ale przestaje tak bardzo przeszkadzać."
-      ]
-    },
-    {
-      "id": "koniec",
-      "naglowek": "Nie tracisz kontroli",
-      "fragmenty": [
-        "Czy tracisz kontrolę? Nie.",
-        "To po prostu mózg, który inaczej kieruje uwagą."
-      ]
-    }
+    {"id": "intro", "naglowek": "Mózg w hipnozie", "fragmenty": [
+      "Co dzieje się w twojej głowie,", "kiedy wchodzisz w hipnozę?", "Zajrzyjmy do środka."]},
+    {"id": "sen", "naglowek": "To nie jest sen", "fragmenty": [
+      "Hipnoza to nie sen ani utrata przytomności.", "To stan głębokiego skupienia i relaksu,", "trochę jak wtedy, gdy zaczytasz się w książce", "i świat wokół na chwilę cichnie."]},
+    {"id": "kontakt", "naglowek": "Masz kontakt i świadomość", "fragmenty": [
+      "Przez cały czas słyszysz głos terapeuty", "i wiesz, gdzie jesteś.", "Możesz w każdej chwili otworzyć oczy.", "Nie zrobisz niczego wbrew sobie."]},
+    {"id": "fale", "naglowek": "Mózg zwalnia", "etykieta": "fale theta", "fragmenty": [
+      "Mózg zwalnia.", "Pojawia się więcej wolnych fal theta,", "podobnych do tych tuż przed zaśnięciem", "albo w głębokiej medytacji."]},
+    {"id": "alarm", "naglowek": "Cichnie wewnętrzny alarm", "etykieta": "przednia kora obręczy", "fragmenty": [
+      "Cichnie wewnętrzny alarm,", "czyli część mózgu, która stale sprawdza, czy coś ci grozi.", "Mniej się martwisz i mniej analizujesz."]},
+    {"id": "krytyk", "naglowek": "Krytyk odpoczywa", "etykieta": "sieć spoczynkowa mózgu", "fragmenty": [
+      "Odpoczywa też wewnętrzny krytyk,", "ten głos, który wszystko ocenia.", "Dlatego ręka może unosić się jakby sama."]},
+    {"id": "podswiadomosc", "naglowek": "Furtka do podświadomości", "etykieta": "z perspektywy hipnoterapii", "fragmenty": [
+      "W hipnoterapii mówi się,", "że wtedy otwiera się furtka do podświadomości:", "do nawyków, emocji i przekonań.", "Sugestie trafiają głębiej", "i łatwiej stają się nowymi nawykami."]},
+    {"id": "cialo", "naglowek": "Ciało się rozluźnia", "etykieta": "kora przedczołowa + wyspa", "fragmenty": [
+      "Mózg mocniej łączy się też z ciałem.", "Oddech zwalnia, mięśnie się rozluźniają,", "a serce bije spokojniej."]},
+    {"id": "bol", "naglowek": "Ból mniej przeszkadza", "fragmenty": [
+      "Dlatego hipnoza pomaga też przy bólu.", "Sygnał dalej dociera,", "ale przestaje tak bardzo przeszkadzać."]},
+    {"id": "koniec", "naglowek": "To ty masz kontrolę", "fragmenty": [
+      "Czy tracisz kontrolę? Nie.", "To ty decydujesz.", "Hipnoza to po prostu mózg,", "który na chwilę inaczej kieruje uwagą."]}
   ]
 }

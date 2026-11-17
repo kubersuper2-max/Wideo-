@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Buduje oba filmy: lektor (Piper) -> timeline -> klatki (Chromium) -> muzyka + miks -> MP4
-# Wymaga: pip install piper-tts numpy; modele głosu Piper (pl_PL-mc_speech-medium) w katalogu $GLOSY
+# Wymaga: pip install piper-tts numpy; modele głosu Piper (pl_PL-gosia-medium) w katalogu $GLOSY
 set -euo pipefail
 cd "$(dirname "$0")"
 BUILD=${BUILD:-build}; GLOSY=${GLOSY:-glosy}

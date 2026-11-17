@@ -19,7 +19,7 @@ def synth(text):
     a = a[max(0, loud[0] - int(0.03 * SR)): loud[-1] + int(0.08 * SR)]
     return a
 
-LEAD, GAP_COMMA, GAP_SENT, GAP_SCENE, TAIL = 1.8, 0.2, 0.45, 1.0, 3.6
+LEAD, GAP_COMMA, GAP_SENT, GAP_SCENE, TAIL = 1.6, 0.18, 0.4, 0.9, 3.8
 audio, t = [np.zeros(int(LEAD * SR))], LEAD
 scenes, chunks = [], []
 for si, sc in enumerate(cfg['sceny']):
