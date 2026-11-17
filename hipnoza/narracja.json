@@ -1,0 +1,71 @@
+{
+  "glos": "mc_speech",
+  "tempo": 1.16,
+  "sceny": [
+    {
+      "id": "intro",
+      "naglowek": "Mózg w hipnozie",
+      "fragmenty": [
+        "Co tak naprawdę dzieje się w mózgu,",
+        "kiedy jesteś w hipnozie?"
+      ]
+    },
+    {
+      "id": "sen",
+      "naglowek": "To nie jest sen",
+      "fragmenty": [
+        "Po pierwsze: hipnoza to nie sen.",
+        "Mózg cały czas czuwa,",
+        "tylko uwaga skupia się na jednym punkcie,",
+        "jak światło latarki."
+      ]
+    },
+    {
+      "id": "alarm",
+      "naglowek": "Cichnie wewnętrzny alarm",
+      "etykieta": "przednia kora obręczy",
+      "fragmenty": [
+        "Wtedy cichnie część mózgu,",
+        "która stale sprawdza, czy coś ci grozi.",
+        "Przestajesz się martwić i analizować."
+      ]
+    },
+    {
+      "id": "cialo",
+      "naglowek": "Mózg mocniej słyszy ciało",
+      "etykieta": "kora przedczołowa + wyspa",
+      "fragmenty": [
+        "Jednocześnie mózg mocniej łączy się z ciałem.",
+        "Łatwiej mu wpłynąć na oddech,",
+        "napięcie mięśni, a nawet na ból."
+      ]
+    },
+    {
+      "id": "obserwator",
+      "naglowek": "Obserwator odpoczywa",
+      "etykieta": "sieć spoczynkowa mózgu",
+      "fragmenty": [
+        "Słabnie też wewnętrzny obserwator.",
+        "Robisz coś, ale mniej się przy tym oceniasz.",
+        "Dlatego ręka może unosić się jakby sama."
+      ]
+    },
+    {
+      "id": "bol",
+      "naglowek": "Ból mniej przeszkadza",
+      "fragmenty": [
+        "Stąd hipnoza pomaga przy bólu.",
+        "Sygnał bólu dalej dociera do mózgu,",
+        "ale przestaje tak bardzo przeszkadzać."
+      ]
+    },
+    {
+      "id": "koniec",
+      "naglowek": "Nie tracisz kontroli",
+      "fragmenty": [
+        "Czy tracisz kontrolę? Nie.",
+        "To po prostu mózg, który inaczej kieruje uwagą."
+      ]
+    }
+  ]
+}

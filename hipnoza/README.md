@@ -1,40 +1,30 @@
-# Mózg w hipnozie — film edukacyjny
+# Mózg w hipnozie - krótki film edukacyjny
 
-Animowany film (1920×1080, 30 kl./s, ok. 2:28), który pokazuje, co dzieje się w mózgu w czasie hipnozy.
+Animowany film z lektorem (ok. 53 s) o tym, co dzieje się w mózgu w czasie hipnozy. Dwie wersje:
 
-**Plik wynikowy:** `mozg_w_hipnozie.mp4`
+- `mozg_w_hipnozie_pion_9x16.mp4` - 1080×1920 (TikTok, Reels, Shorts)
+- `mozg_w_hipnozie_poziom_16x9.mp4` - 1920×1080 (YouTube)
 
 ## Sceny
-| Czas | Scena |
-|---|---|
-| 0:00 | Tytuł |
-| 0:08 | Czym jest hipnoza? (skupiona uwaga, to nie sen) |
-| 0:20 | Indukcja: zawężenie uwagi |
-| 0:30 | Zmiana 1: spadek aktywności dACC (sieć istotności) |
-| 0:46 | Zmiana 2: silniejsza łączność DLPFC ↔ wyspa (mózg–ciało) |
-| 1:02 | Zmiana 3: słabsza łączność DLPFC ↔ DMN (działanie bez autorefleksji) |
-| 1:18 | Fale mózgowe: więcej theta |
-| 1:30 | Ból: spada nieprzyjemność (ACC), S1 bez większych zmian |
-| 1:42 | Percepcja: sugestia koloru aktywuje obszary koloru |
-| 1:54 | Podatność na hipnozę |
-| 2:06 | Podsumowanie i zastosowania |
-| 2:20 | Źródła |
+1. **Intro** - cząsteczki układają się w mózg.
+2. **To nie jest sen** - uwaga jak światło latarki, rozpraszacze odpływają.
+3. **Cichnie wewnętrzny alarm** - przednia kora obręczy się uspokaja.
+4. **Mózg mocniej słyszy ciało** - oddech i serce zwalniają (kora przedczołowa + wyspa).
+5. **Obserwator odpoczywa** - słabnie połączenie z siecią spoczynkową mózgu.
+6. **Ból mniej przeszkadza** - sygnał dociera, ale mniej przeszkadza.
+7. **Nie tracisz kontroli** - zakończenie.
+
+Tekst lektora: `narracja.json` (zmień tekst i uruchom `zbuduj.sh`, czasy scen i napisy dopasują się same).
 
 ## Źródła
 - Jiang H. i in. (2016). *Brain activity and functional connectivity associated with hypnosis.* Cerebral Cortex.
 - Rainville P. i in. (1997). *Pain affect encoded in human anterior cingulate but not somatosensory cortex.* Science.
-- Kosslyn S. M. i in. (2000). *Hypnotic visual illusion alters color processing in the brain.* American Journal of Psychiatry.
 
-## Jak zbudować
-Wymaga: Node.js + Playwright (Chromium), Python 3 + numpy, ffmpeg.
+## Pliki
+- `scena.html` - animacja (canvas). W przeglądarce: `scena.html#h` (poziom) lub `scena.html#v` (pion).
+- `lektor.py` - głos lektora (Piper TTS, głos `pl_PL-mc_speech-medium`) + `timeline.js` z czasami.
+- `muzyka.py` - muzyka ambient, przejścia, miks z lektorem (muzyka ścisza się pod głosem).
+- `render.js` - renderowanie klatek do MP4, `podglad.js` - zrzuty pojedynczych klatek.
+- `zbuduj.sh` - całość od początku.
 
-```bash
-./hipnoza/zbuduj.sh
-```
-
-- `scena.html` — cała animacja (canvas, funkcja `render(t)`); otwarta w przeglądarce odtwarza się na żywo.
-- `render.js` — renderuje klatki w kilku przeglądarkach równolegle i koduje je do MP4.
-- `muzyka.py` — generuje ścieżkę ambient (akordy, dzwonki przy scenach, cichy podkład stereo z różnicą 6 Hz).
-- `podglad.js` — zrzuty pojedynczych klatek: `node podglad.js <katalog> 10 42 90`.
-
-Schemat mózgu jest uproszczony i nie w skali. Film ma charakter edukacyjny.
+Schemat mózgu jest uproszczony. Film ma charakter edukacyjny.

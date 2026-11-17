@@ -1,76 +1,80 @@
-"""Generuje ambientową ścieżkę dźwiękową do filmu (numpy, bez zewnętrznych sampli)."""
-import sys, wave
+"""Ścieżka dźwiękowa: ambient + przejścia + lektor (ze ściszaniem muzyki pod głosem).
+Użycie: python3 muzyka.py <timeline.js> <lektor_44k.wav> <wyjście.wav>"""
+import json, re, sys, wave
 import numpy as np
 
-SR, DUR = 44100, 148.0
-N = int(SR * DUR)
+SR = 44100
+tl = json.loads(re.search(r'=\s*(\{.*\})\s*;', open(sys.argv[1], encoding='utf-8').read(), re.S).group(1))
+DUR = tl['duration']; N = int(SR * DUR)
 t = np.arange(N) / SR
 rng = np.random.default_rng(5)
-L = np.zeros(N); Rr = np.zeros(N)
+L = np.zeros(N); R = np.zeros(N)
+hz = lambda n: 440.0 * 2 ** ((n - 69) / 12)
 
-def hz(note):  # MIDI -> Hz
-    return 440.0 * 2 ** ((note - 69) / 12)
-
-# --- pad: progresja akordów (Am9 – Fmaj7 – Cmaj7 – G6), 8 s na akord, przenikanie ---
+# pad: Am9 - Fmaj7 - Cmaj7 - G6, 6 s na akord
 chords = [[45, 57, 60, 64, 71], [41, 57, 60, 64, 69], [48, 55, 59, 64, 67], [43, 55, 59, 62, 64]]
-seg = 8.0
+seg = 6.0
 for i in range(int(DUR / seg) + 1):
-    ch = chords[i % 4]
-    s0, s1 = i * seg - 2.0, (i + 1) * seg + 2.0
+    s0, s1 = i * seg - 1.5, (i + 1) * seg + 1.5
     a, b = max(0, int(s0 * SR)), min(N, int(s1 * SR))
     if a >= b: continue
-    tt = t[a:b]
-    k = (tt - s0) / (s1 - s0)
-    env = np.sin(np.pi * np.clip(k, 0, 1)) ** 1.5
-    for j, n in enumerate(ch):
-        f = hz(n)
-        amp = 0.05 if n < 50 else 0.032
+    tt = t[a:b]; env = np.sin(np.pi * np.clip((tt - s0) / (s1 - s0), 0, 1)) ** 1.5
+    for j, n in enumerate(chords[i % 4]):
+        f, amp = hz(n), (0.05 if n < 50 else 0.03)
         for det, pan in ((-0.6, 0.75), (0.6, 0.25)):
             ph = rng.uniform(0, 2 * np.pi)
-            w = np.sin(2 * np.pi * (f + det) * tt + ph) + 0.25 * np.sin(2 * np.pi * 2 * (f + det) * tt + ph)
-            trem = 1 + 0.15 * np.sin(2 * np.pi * (0.07 + 0.03 * j) * tt + j)
-            L[a:b] += amp * env * w * trem * pan
-            Rr[a:b] += amp * env * w * trem * (1 - pan)
-
-# --- podkład „theta”: 110 Hz / 116 Hz w kanałach (różnica 6 Hz) od indukcji ---
-fade = np.clip((t - 20) / 6, 0, 1) * np.clip((140 - t) / 4, 0, 1)
-L += 0.035 * fade * np.sin(2 * np.pi * 110 * t)
-Rr += 0.035 * fade * np.sin(2 * np.pi * 116 * t)
-
-# --- delikatny szum „oddechu” ---
+            w = np.sin(2 * np.pi * (f + det) * tt + ph) + 0.25 * np.sin(4 * np.pi * (f + det) * tt + ph)
+            w *= env * amp * (1 + 0.15 * np.sin(2 * np.pi * (0.07 + 0.03 * j) * tt + j))
+            L[a:b] += w * pan; R[a:b] += w * (1 - pan)
+# niski puls (bicie serca) w intro, zwalnia
+for bt in np.arange(0.4, 6, 0.75):
+    a = int(bt * SR); tt = t[a:a + int(0.4 * SR)] - bt
+    k = np.exp(-tt * 14) * np.sin(2 * np.pi * 55 * tt) * 0.25
+    L[a:a + len(k)] += k; R[a:a + len(k)] += k
+# podkład theta 110/116 Hz
+fade = np.clip((t - 6) / 4, 0, 1) * np.clip((DUR - 2 - t) / 3, 0, 1)
+L += 0.03 * fade * np.sin(2 * np.pi * 110 * t); R += 0.03 * fade * np.sin(2 * np.pi * 116 * t)
+# "whoosh" + dzwonek przy przejściach
 noise = rng.standard_normal(N)
-for _ in range(3):  # prosty filtr dolnoprzepustowy
-    noise = np.convolve(noise, np.ones(40) / 40, mode='same')
-breath = 0.5 + 0.5 * np.sin(2 * np.pi * t / 8.0 - np.pi / 2)
-L += 0.25 * noise * breath * 0.12
-Rr += 0.25 * np.roll(noise, 900) * breath * 0.12
+for s in tl['scenes'][1:]:
+    st = s['start']
+    a, b = int((st - 0.6) * SR), min(N, int((st + 0.7) * SR))
+    tt = (t[a:b] - (st - 0.6)) / 1.3
+    env = np.sin(np.pi * tt) ** 2
+    nz = noise[a:b].copy()
+    k = int(4 + 40 * 0.5)  # proste wygładzenie = lżejszy szum
+    nz = np.convolve(nz, np.ones(k) / k, mode='same')
+    L[a:b] += 0.35 * env * nz * (1 - tt); R[a:b] += 0.35 * env * nz * tt
+for st, note in [(0.2, 76)] + [(s['start'] + 0.1, [81, 76, 79, 83, 81, 79, 76][i % 7]) for i, s in enumerate(tl['scenes'][1:])] + [(DUR - 3.0, 81)]:
+    a = int(st * SR); b = min(N, a + int(4 * SR)); tt = t[a:b] - st; f = hz(note)
+    env = np.exp(-tt * 1.3) * np.clip(tt / 0.005, 0, 1)
+    w = (np.sin(2 * np.pi * f * tt) + 0.4 * np.sin(2 * np.pi * f * 2.76 * tt) * np.exp(-tt * 2)) * env * 0.05
+    L[a:b] += w; R[a:b] += np.roll(w, 300)
 
-# --- dzwonki na początku scen ---
-for st, note in [(0.3, 76), (8, 81), (20, 76), (30, 79), (46, 83), (62, 81), (78, 76), (90, 79), (102, 84), (114, 81), (126, 76), (140, 81)]:
-    a = int(st * SR); b = min(N, a + int(5 * SR))
-    tt = t[a:b] - st
-    f = hz(note)
-    env = np.exp(-tt * 1.1) * np.clip(tt / 0.005, 0, 1)
-    w = np.sin(2 * np.pi * f * tt) + 0.4 * np.sin(2 * np.pi * f * 2.76 * tt) * np.exp(-tt * 2) + 0.2 * np.sin(2 * np.pi * f * 5.4 * tt) * np.exp(-tt * 4)
-    L[a:b] += 0.06 * env * w
-    Rr[a:b] += 0.06 * env * np.roll(w, 300)
-
-# --- pogłos (splot z zanikającym szumem, FFT) ---
 def reverb(x, seed):
-    ir_len = int(3.0 * SR)
-    r = np.random.default_rng(seed).standard_normal(ir_len) * np.exp(-np.arange(ir_len) / SR * 2.2)
-    r[0] = 0
-    n = 1 << int(np.ceil(np.log2(len(x) + ir_len)))
+    n_ir = int(2.5 * SR)
+    r = np.random.default_rng(seed).standard_normal(n_ir) * np.exp(-np.arange(n_ir) / SR * 2.4); r[0] = 0
+    n = 1 << int(np.ceil(np.log2(len(x) + n_ir)))
     y = np.fft.irfft(np.fft.rfft(x, n) * np.fft.rfft(r, n), n)[:len(x)]
     return y / np.max(np.abs(y)) * np.max(np.abs(x))
-Lw, Rw = reverb(L, 1), reverb(Rr, 2)
-L = 0.6 * L + 0.55 * Lw; Rr = 0.6 * Rr + 0.55 * Rw
+L = 0.6 * L + 0.55 * reverb(L, 1); R = 0.6 * R + 0.55 * reverb(R, 2)
+music = np.stack([L, R], 1)
+music /= np.max(np.abs(music))
 
-# --- fade in/out, normalizacja ---
-master = np.clip(t / 3, 0, 1) * np.clip((DUR - t) / 4, 0, 1)
-out = np.stack([L * master, Rr * master], axis=1)
-out = out / np.max(np.abs(out)) * 0.85
-pcm = (out * 32767).astype(np.int16)
-with wave.open(sys.argv[1], 'wb') as w:
-    w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes(pcm.tobytes())
-print('ok', sys.argv[1])
+# lektor
+with wave.open(sys.argv[2]) as w:
+    assert w.getframerate() == SR
+    v = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
+    if w.getnchannels() == 2: v = v.reshape(-1, 2).mean(1)
+v = np.pad(v, (0, max(0, N - len(v))))[:N]
+# ściszanie muzyki pod głosem (obwiednia głosu, wygładzona)
+env = np.abs(v); k = int(0.25 * SR)
+env = np.convolve(env, np.ones(k) / k, mode='same'); env = np.clip(env / (np.percentile(env, 95) + 1e-9), 0, 1)
+duck = 1 - 0.55 * env
+master = np.clip(t / 1.5, 0, 1) * np.clip((DUR - t) / 2.0, 0, 1)
+mixd = music * (0.42 * duck * master)[:, None] + v[:, None] * 0.95
+mixd /= max(1.0, np.max(np.abs(mixd)) / 0.95)
+with wave.open(sys.argv[3], 'wb') as w:
+    w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
+    w.writeframes((mixd * 32767).astype(np.int16).tobytes())
+print('ok', sys.argv[3], f'{DUR:.1f} s')
